@@ -1,20 +1,15 @@
-﻿/*
- * Because it is based on reverse-engineering the Unity
- * assembly (extracted through dnSpy), this mod's source code
- * is a little spaghetti, but I have tried to make it readable.
- *
- * See README.MD for more info.
- * 
- * Author: /u/ShiningConcepts
- */
+//This is the source code for Hexmod, a QOL mod for Hexcells.
+//This source code is largely based on reverse-engineering
+//the Unity assembly (extracted through dnSpy).
+//See README.MD for more info. Author: /u/ShiningConcepts
 
 using System;
 using System.Reflection;
+using System.Collections;
+using System.Collections.Generic;
 using BepInEx;
 using UnityEngine;
 using HarmonyLib;
-using System.Collections;
-using System.Collections.Generic;
 
 namespace Hexmod
 {
@@ -26,17 +21,17 @@ namespace Hexmod
 		public const string pluginName = "Hexmod";
 		public const string pluginVersion = "1.0";
 
+		//This array can be used to mark indices to cells on the grid.
+		public static GameObject[,] cellArray;
+
 		//This array keeps track of all cells that have been
-		//marked blue, so that the hint updating
-		//algorithm knows to exclude them.
+		//marked blue, so that they can be excluded
+		//when counting unmarked blue cells.
 		public static bool[,] foundArray = new bool[34, 34];
 
 		//Function for logging messages.
 		public static void Log(String m)
-		{
-			var l = BepInEx.Logging.Logger.CreateLogSource("Hexmod");
-			l.LogInfo(m);
-		}
+		{ BepInEx.Logging.Logger.CreateLogSource("Hexmod").LogInfo(m); }
 
 		//Function that runs on mod startup. Applies patches.
 		public void Awake()
@@ -46,28 +41,32 @@ namespace Hexmod
 			//Harmony is used to patch methods.
 			Harmony h = new Harmony(pluginGuid);
 
-			//First, patch the function that loads the leevel, so
-			//that cells marked as blue at the start are accounted for.
-			h.Patch(AccessTools.Method(typeof(LevelCompleteScript), "Start"),
-			null,
+			//First, patch the function that loads the level, so
+			//that cells marked as blue at the start of the level are accounted for.
+			//(The second parameter being null makes this a postfix rather than prefix.)
+			h.Patch(AccessTools.Method(typeof(LevelCompleteScript), "Start"), null,
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "MarkDefaultBlues")));
 
 			//Now, patch the function that loads blue cells
-			//from a loaded save state, and account for those cells.
-			h.Patch(AccessTools.Method(typeof(HexBehaviour),
-				"QuickHighlightClick", new Type[] { typeof(int), typeof(int) }),
+			//from a loaded save state, so we can account for those cells.
+			h.Patch(AccessTools.Method(typeof(HexBehaviour), "QuickHighlightClick", new Type[] { typeof(int), typeof(int) }),
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "QuickBlueReact")));
 
 			//Finally, patch the function triggered when blue cells are manually
-			//highlighted by the player to account for them.
-			h.Patch(
-			AccessTools.Method(typeof(HexBehaviour), "HighlightClick"),
+			//highlighted by the player, to account for them.
+			h.Patch(AccessTools.Method(typeof(HexBehaviour), "HighlightClick"),
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "BlueReact")));
 		}
 
 		//MarkDefaultBlues() will catch the cells displayed as blue by default.
 		public static void MarkDefaultBlues()
 		{
+			//MarkDefaultBlues() will always run as soon as a level is loaded (including
+			//restarts). Therefore, we should reset foundArray at the start of it,
+			//and also initialize the cellArray for the level.
+			foundArray = new bool[34, 34];
+			updateCellArray();
+
 			/*
 			 * From my debugging with Unity Inspector:
 			 * All orange cells active are in Hex Grid Overlay.
@@ -77,15 +76,11 @@ namespace Hexmod
 			 * We then eliminate the blue cells that are unfound
              * (have a corresponding orange) in Hex Grid Overlay.
 			 * 
-			 * We then account for the ones that remain.
+			 * What remains must be the cells marked as blue by default.
 			 * */
 
-			//Since this function is run first, we first clear foundArray.
-			foundArray = new bool[34, 34];
-
+			//So first, get all blue cells in Hex Grid.
 			List<String> l = new List<String>();
-
-			//List all Blue cells.
 			IEnumerator e = GameObject.Find("Hex Grid").transform.GetEnumerator();
 			while (e.MoveNext())
 			{
@@ -115,50 +110,44 @@ namespace Hexmod
 				l.Remove(a + "-" + b);
 			}
 
-			if (l.Count == 0)
-				return;
-
-			//Now, for each found blue tile, mark it in foundArray, and
-			//update the corresponding hints.
-			GameObject[,] array = getArrayOfTiles();
+			//Now, for each remaining blue tile, mark it as found.
 			foreach (string s in l)
 			{
 				int a = Int32.Parse(s.Split('-')[0]);
 				int b = Int32.Parse(s.Split('-')[1]);
-
-				updateAllHints(a, b);
+				markAsFound(a, b);
 			}
 		}
 
-		//React to non-default blues from a save state.
+		//Account for cells marked as blue upon loading a save state.
 		public static void QuickBlueReact(HexBehaviour __instance)
 		{
-			//Mark the cell as correct.
+			//Extract the indices representing the position of the cell on the grid.
 			int a = Mathf.RoundToInt(__instance.gameObject.transform.position.x / 0.88f) + 16;
 			int b = Mathf.RoundToInt(__instance.gameObject.transform.position.y / 0.5f) + 16;
 
-			updateAllHints(a, b);
+			//Mark the cell as found and update the hints.
+			markAsFound(a, b);
 		}
 
 		//React to manual clicks.
 		public static void BlueReact(HexBehaviour __instance)
 		{
-			//First, ensure the user is actually trying to mark a blue cell as blue.
+			//First, ensure that the cell the user is trying to mark as blue is actually blue.
 			if (!(__instance.containsShapeBlock))
 				return;
 
-			//Now, do the same thing done in the code for quick reactions.
+			//Now we can just do the same thing done in QuickBlueReact().
 			QuickBlueReact(__instance);
 		}
 
-		//Update hints and first mark a cell as blue.
-		public static void updateAllHints(int a, int b)
+		//Mark a cell as found in foundArray, and then update all hint types.
+		public static void markAsFound(int a, int b)
 		{
 			foundArray[a, b] = true;
-			GameObject[,] array = getArrayOfTiles();
-			updateBlackHexHints(array);
-			updateFlowerNumbers(array);
-			updateLineHints(array);
+			updateBlackHexHints();
+			updateFlowerNumbers();
+			updateLineHints();
 		}
 
 		//The rest of the code is primarily based on reverse-engineering of the
@@ -166,36 +155,35 @@ namespace Hexmod
 
 		//Generate an array of tiles needed by the below functions.
 		//This array can map integers to specific tiles.
-		public static GameObject[,] getArrayOfTiles()
+		public static void updateCellArray()
 		{
-			GameObject[,] array = new GameObject[34, 34];
-			IEnumerator enumerator = GameObject.Find("Hex Grid").transform.GetEnumerator();
-			while (enumerator.MoveNext())
+			cellArray = new GameObject[34, 34];
+			IEnumerator e = GameObject.Find("Hex Grid").transform.GetEnumerator();
+			while (e.MoveNext())
 			{
-				object obj = enumerator.Current;
+				object obj = e.Current;
 				Transform t = (Transform)obj;
 				int a = Mathf.RoundToInt(t.position.x / 0.88f) + 16;
 				int b = Mathf.RoundToInt(t.position.y / 0.5f) + 16;
-				array[a, b] = t.gameObject;
+				cellArray[a, b] = t.gameObject;
 			}
-			return array;
 		}
 
 		//Update the hints shown on black cells.
-		public static void updateBlackHexHints(GameObject[,] array)
+		public static void updateBlackHexHints()
 		{
 			for (int i = 0; i <= 33; i++)
 			{
 				for (int j = 0; j <= 33; j++)
 				{
-					if (array[i, j] == null)
+					if (cellArray[i, j] == null)
 						continue;
 
 					//This check will exclude black hexes with "?" (undisclosed neighbor count).
-					if (!(array[i, j].name == "Black Hex" || array[i, j].name == "Black Hex(Clone)"))
+					if (!(cellArray[i, j].name == "Black Hex" || cellArray[i, j].name == "Black Hex(Clone)"))
 						continue;
 
-					int blueNeighborCount = 0;
+					int blueCount = 0;
 
 					//The indices of all possible places on the grid a blue neighbor may be.
 					var pairs = new int[]
@@ -209,61 +197,57 @@ namespace Hexmod
 					};
 
 					//Iterate over them two at a time.
-					int a, b;
 					for (int x = 0; x < pairs.Length; x += 2)
 					{
-						a = pairs[x];
-						b = pairs[x + 1];
+						int a = pairs[x];
+						int b = pairs[x + 1];
 
-						//Make sure each indice is valid ([0, 33]), then
-						//ensure the tile is non-null (exists), is blue,
+						//Make sure each indice is valid ([0, 33]), is
+						//non-null (exists in the level), is blue,
 						//and exclude tiles that are already found.
-
 						if (0 > a || 0 > b || 33 < a || 33 < b)
 							continue;
-						if (array[a, b] == null)
+						if (cellArray[a, b] == null)
 							continue;
-						if (array[a, b].tag != "Blue")
+						if (cellArray[a, b].tag != "Blue")
 							continue;
 						if (foundArray[a, b])
 							continue;
 
-						blueNeighborCount++;
+						blueCount++;
 					}
 
 					//Update the tile's hint text. Preserve the sequential/non-sequential text formatting if needed.
-					if (array[i, j].tag == "Clue Hex (Sequential)" || array[i, j].tag == "Clue Hex (Sequential) Hidden")
+					if (cellArray[i, j].tag == "Clue Hex (Sequential)" || cellArray[i, j].tag == "Clue Hex (Sequential) Hidden")
 					{
-						array[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = "{" + blueNeighborCount + "}";
+						cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = "{" + blueCount + "}";
 					}
-					else if (array[i, j].tag == "Clue Hex (NOT Sequential)" || array[i, j].tag == "Clue Hex (NOT Sequential) Hidden")
+					else if (cellArray[i, j].tag == "Clue Hex (NOT Sequential)" || cellArray[i, j].tag == "Clue Hex (NOT Sequential) Hidden")
 					{
-						array[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = "-" + blueNeighborCount + "-";
+						cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = "-" + blueCount + "-";
 					}
 					else
 					{
-						array[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = blueNeighborCount.ToString();
+						cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = blueCount.ToString();
 					}
 				}
 			}
 		}
 
-		//Update the hint on flower cells.
-		public static void updateFlowerNumbers(GameObject[,] array)
+		//Update the hints on flower cells.
+		public static void updateFlowerNumbers()
 		{
 			for (int i = 0; i <= 33; i++)
 			{
 				for (int j = 0; j <= 33; j++)
 				{
-					if (array[i, j] == null)
+					if (cellArray[i, j] == null)
 						continue;
 
-					if (!(array[i, j].name == "Blue Hex (Flower)" || array[i, j].name == "Blue Hex (Flower)(Clone)"))
+					if (!(cellArray[i, j].name == "Blue Hex (Flower)" || cellArray[i, j].name == "Blue Hex (Flower)(Clone)"))
 						continue;
 
-					String original = array[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text;
-
-					int blueNeighborCount = 0;
+					int blueCount = 0;
 
 					//All possible indices of a cell in the region covered by a flower.
 					var pairs = new int[]
@@ -287,112 +271,98 @@ namespace Hexmod
 						i-2, j+2,
 						i-1, j+3
 					};
-					int a, b;
+
 					for (int x = 0; x < pairs.Length; x += 2)
 					{
-						a = pairs[x];
-						b = pairs[x + 1];
+						int a = pairs[x];
+						int b = pairs[x + 1];
 
 						if (0 > a || 0 > b || 33 < a || 33 < b)
 							continue;
-						if (array[a, b] == null)
+						if (cellArray[a, b] == null)
 							continue;
-						if (array[a, b].tag != "Blue")
+						if (cellArray[a, b].tag != "Blue")
 							continue;
 						if (foundArray[a, b])
 							continue;
 
-						blueNeighborCount++;
-
+						blueCount++;
 					}
-					array[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = blueNeighborCount.ToString();
-
+					cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = blueCount.ToString();
 				}
 			}
 		}
 
 		//Update the line hints.
-		public static void updateLineHints(GameObject[,] array)
+		public static void updateLineHints()
 		{
-			//This is in the source code, I'm quite sure it's
-			//unneeded here but included for safety.
 			if (GameObject.Find("Columns Parent") == null)
 				return;
 
-			IEnumerator e2 = GameObject.Find("Columns Parent").transform.GetEnumerator();
-			while (e2.MoveNext())
+			IEnumerator e = GameObject.Find("Columns Parent").transform.GetEnumerator();
+			while (e.MoveNext())
 			{
-				object o = e2.Current;
+				object o = e.Current;
 				Transform t = (Transform)o;
-
-				String original = t.GetComponent<TextMesh>().text;
-
-				//This is how the type of line (left/right/vertical) is computed.
-				//This is not from reverse-engineering, it was found througgh debugging
-				//with UnityInspector, the intuitive way of checking diagonal status
-				//doesn't seem to work here.
-				int ang = (int)t.GetChild(0).eulerAngles.y;
-				String angle;
-				if (ang == 180)
-					angle = "Vertical";
-				else if (ang == 270)
-					angle = "Left";
-				else if (ang == 90)
-					angle = "Right";
-				else
-				{
-					t.GetComponent<TextMesh>().text = "ERR";
-					Log("ERROR - one of the column hints had an unexpected angle of " + ang);
-					continue;
-				}
 
 				int a = Mathf.RoundToInt(t.position.x / 0.88f) + 16;
 				int b = Mathf.RoundToInt(t.position.y / 0.5f) + 16;
+				cellArray[a, b] = t.gameObject;
 
-				array[a, b] = t.gameObject;
+				//Use euler angles to compute the direction of the line.
+				int xAng = (int)t.GetChild(0).eulerAngles.x;
+				int yAng = (int)t.GetChild(0).eulerAngles.y;
 
-				int blueCount = 0;
+				int xChange;
+				int yChange;
 
-				//Now, for each direction, count how many blue cells
-				//that are not found are in the line. (The logic for this
-				//part is purely borrowed from the assembly.)
-
-				if (angle == "Left")
-				{
-					int c = b - 1;
-
-					for (int k = a - 1; k >= 0; k--)
-					{
-						if (array[k, c] != null && array[k, c].tag == "Blue" && !(foundArray[k, c]))
-							blueCount++;
-						c--;
-						if (c < 0)
-							break;
-					}
-				}
-
-				else if (angle == "Right")
-				{
-					int c = b - 1;
-
-					for (int l = a + 1; l < 31; l++)
-					{
-						if (array[l, c] != null && array[l, c].tag == "Blue" && !(foundArray[l, c]))
-							blueCount++;
-						c--;
-						if (c < 0)
-							break;
-					}
-				}
-
+				if (yAng == 180) //Straight line, count down
+                {
+					xChange = 0;
+					yChange = -1;
+                }
+				else if (xAng == 330 && yAng == 90) //Up-right
+                {
+					xChange = 1;
+					yChange = 1;
+                }
+				else if (xAng == 330 && yAng == 270) //Up-left
+                {
+					xChange = -1;
+					yChange = 1;
+                }
+				else if (xAng == 29 && yAng == 90) //Down-right
+                {
+					xChange = 1;
+					yChange = -1;
+                }
+				else if (xAng == 29 && yAng == 270) //Down-left
+                {
+					xChange = -1;
+					yChange = -1;
+                }
 				else
 				{
-					for (int m = b - 2; m >= 0; m--)
-					{
-						if (array[a, m] != null && array[a, m].tag == "Blue" && !(foundArray[a, m]))
-							blueCount++;
-					}
+					t.GetComponent<TextMesh>().text = "ERR";
+					Log("ERROR - one of the column hints had an unexpected angle of " + xAng + ", " + yAng);
+					continue;
 				}
+
+				//Count blue cells in the line.
+				int x = a + xChange;
+				int y = b + yChange;
+				if (xChange == 0) //For straight line, y must be initialized to y-2
+					y--;
+
+				int blueCount = 0;
+				while (x >= 0 && y >= 0 && x <= 31 && y <= 31)
+                {
+					if (cellArray[x, y] != null && cellArray[x, y].tag == "Blue" && !(foundArray[x, y]))
+						blueCount++;
+
+					x += xChange;
+					y += yChange;
+                }
 
 				//Now, update the text. Preserve sequential/non-sequential formatting.
 				if (t.GetComponent<TextMesh>().text.Contains("{"))
@@ -403,6 +373,5 @@ namespace Hexmod
 					t.GetComponent<TextMesh>().text = blueCount.ToString();
 			}
 		}
-
 	}
 }
