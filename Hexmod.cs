@@ -150,6 +150,16 @@ namespace Hexmod
 			updateLineHints();
 		}
 
+		//Update a hint in consideration of its type
+		public static string updateHint(String old, int n)
+        {
+			if (old.Contains("{")) //Sequential hint
+				return "{" + n + "}";
+			else if (old.Contains("-")) //Non-sequential hint
+				return "-" + n + "-";
+			return n.ToString();
+        }
+
 		//The rest of the code is primarily based on reverse-engineering of the
 		//code found when decompiling EditorFunctions.GenerateHexNumbers().
 
@@ -184,7 +194,7 @@ namespace Hexmod
 					if (cellArray[i, j].tag == "Clue Hex Blank" || cellArray[i, j].tag == "Clue Hex Blank Hidden")
 						continue;
 
-						int blueCount = 0;
+					int blueCount = 0;
 
 					//The indices of all possible places on the grid a blue neighbor may be.
 					var pairs = new int[]
@@ -219,18 +229,8 @@ namespace Hexmod
 					}
 
 					//Update the tile's hint text. Preserve the sequential/non-sequential text formatting if needed.
-					if (cellArray[i, j].tag == "Clue Hex (Sequential)" || cellArray[i, j].tag == "Clue Hex (Sequential) Hidden")
-					{
-						cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = "{" + blueCount + "}";
-					}
-					else if (cellArray[i, j].tag == "Clue Hex (NOT Sequential)" || cellArray[i, j].tag == "Clue Hex (NOT Sequential) Hidden")
-					{
-						cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = "-" + blueCount + "-";
-					}
-					else
-					{
-						cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = blueCount.ToString();
-					}
+					cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text =
+					updateHint(cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text, blueCount);
 				}
 			}
 		}
@@ -289,7 +289,8 @@ namespace Hexmod
 
 						blueCount++;
 					}
-					cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text = blueCount.ToString();
+					cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text =
+					updateHint(cellArray[i, j].transform.Find("Hex Number").GetComponent<TextMesh>().text, blueCount);
 				}
 			}
 		}
@@ -371,12 +372,8 @@ namespace Hexmod
                 }
 
 				//Now, update the text. Preserve sequential/non-sequential formatting.
-				if (t.GetComponent<TextMesh>().text.Contains("{"))
-					t.GetComponent<TextMesh>().text = "{" + blueCount + "}";
-				else if (t.GetComponent<TextMesh>().text.Contains("-"))
-					t.GetComponent<TextMesh>().text = "-" + blueCount + "-";
-				else
-					t.GetComponent<TextMesh>().text = blueCount.ToString();
+				t.GetComponent<TextMesh>().text =
+				updateHint(t.GetComponent<TextMesh>().text, blueCount);
 			}
 		}
 	}
