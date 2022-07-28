@@ -179,11 +179,12 @@ namespace Hexmod
 					if (cellArray[i, j] == null)
 						continue;
 
-					//This check will exclude black hexes with "?" (undisclosed neighbor count).
 					if (!(cellArray[i, j].name == "Black Hex" || cellArray[i, j].name == "Black Hex(Clone)"))
 						continue;
+					if (cellArray[i, j].tag == "Clue Hex Blank" || cellArray[i, j].tag == "Clue Hex Blank Hidden")
+						continue;
 
-					int blueCount = 0;
+						int blueCount = 0;
 
 					//The indices of all possible places on the grid a blue neighbor may be.
 					var pairs = new int[]
@@ -341,6 +342,11 @@ namespace Hexmod
 					xChange = -1;
 					yChange = -1;
                 }
+				else if (xAng == 0 && yAng == 90) //Rightwards
+                {
+					xChange = 1;
+					yChange = 0;
+                }
 				else
 				{
 					t.GetComponent<TextMesh>().text = "ERR";
@@ -351,7 +357,7 @@ namespace Hexmod
 				//Count blue cells in the line.
 				int x = a + xChange;
 				int y = b + yChange;
-				if (xChange == 0) //For straight line, y must be initialized to y-2
+				if (yAng == 180) //For straight line, y must be initialized to y-2
 					y--;
 
 				int blueCount = 0;
