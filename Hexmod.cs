@@ -1,4 +1,4 @@
-//This is the source code for Hexmod, a QOL mod for Hexcells.
+﻿//This is the source code for Hexmod, a QOL mod for Hexcells.
 //This source code is largely based on reverse-engineering
 //the Unity assembly (extracted through dnSpy).
 //See README.MD for more info. Author: /u/ShiningConcepts
@@ -45,6 +45,10 @@ namespace Hexmod
 			//that cells marked as blue at the start of the level are accounted for.
 			//(The second parameter being null makes this a postfix rather than prefix.)
 			h.Patch(AccessTools.Method(typeof(LevelCompleteScript), "Start"), null,
+			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "MarkDefaultBlues")));
+
+			//Apply the same patch to custom levels.
+			h.Patch(AccessTools.Method(typeof(LevelCompleteScriptCustom), "Start"), null,
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "MarkDefaultBlues")));
 
 			//Now, patch the function that loads blue cells
@@ -152,13 +156,13 @@ namespace Hexmod
 
 		//Update a hint in consideration of its type
 		public static string updateHint(String old, int n)
-        {
+		{
 			if (old.Contains("{")) //Sequential hint
 				return "{" + n + "}";
 			else if (old.Contains("-")) //Non-sequential hint
 				return "-" + n + "-";
 			return n.ToString();
-        }
+		}
 
 		//The rest of the code is primarily based on reverse-engineering of the
 		//code found when decompiling EditorFunctions.GenerateHexNumbers().
@@ -319,35 +323,35 @@ namespace Hexmod
 				int yChange;
 
 				if (yAng == 180) //Straight line, count down
-                {
+				{
 					xChange = 0;
 					yChange = -1;
-                }
+				}
 				else if (xAng == 330 && yAng == 90) //Up-right
-                {
+				{
 					xChange = 1;
 					yChange = 1;
-                }
+				}
 				else if (xAng == 330 && yAng == 270) //Up-left
-                {
+				{
 					xChange = -1;
 					yChange = 1;
-                }
+				}
 				else if (xAng == 29 && yAng == 90) //Down-right
-                {
+				{
 					xChange = 1;
 					yChange = -1;
-                }
+				}
 				else if (xAng == 29 && yAng == 270) //Down-left
-                {
+				{
 					xChange = -1;
 					yChange = -1;
-                }
+				}
 				else if (xAng == 0 && yAng == 90) //Rightwards
-                {
+				{
 					xChange = 1;
 					yChange = 0;
-                }
+				}
 				else
 				{
 					t.GetComponent<TextMesh>().text = "ERR";
@@ -363,13 +367,13 @@ namespace Hexmod
 
 				int blueCount = 0;
 				while (x >= 0 && y >= 0 && x <= 31 && y <= 31)
-                {
+				{
 					if (cellArray[x, y] != null && cellArray[x, y].tag == "Blue" && !(foundArray[x, y]))
 						blueCount++;
 
 					x += xChange;
 					y += yChange;
-                }
+				}
 
 				//Now, update the text. Preserve sequential/non-sequential formatting.
 				t.GetComponent<TextMesh>().text =
