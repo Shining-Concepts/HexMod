@@ -24,6 +24,9 @@ namespace Hexmod
 		//This array can be used to mark indices to cells on the grid.
 		public static GameObject[,] cellArray;
 
+		//This is used to manage generated levels (they are run a bit differently).
+		public static bool hasRun = false;
+
 		//This array keeps track of all cells that have been
 		//marked blue, so that they can be excluded
 		//when counting unmarked blue cells.
@@ -41,33 +44,47 @@ namespace Hexmod
 			//Harmony is used to patch methods.
 			Harmony h = new Harmony(pluginGuid);
 
-			//First, patch the function that loads the level, so
-			//that cells marked as blue at the start of the level are accounted for.
+			//Patch the start of the level for base game levels.
 			//(The second parameter being null makes this a postfix rather than prefix.)
 			h.Patch(AccessTools.Method(typeof(LevelCompleteScript), "Start"), null,
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "MarkDefaultBlues")));
 
-			//Apply the same patch to custom levels.
+			//Same patch for custom levels.
 			h.Patch(AccessTools.Method(typeof(LevelCompleteScriptCustom), "Start"), null,
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "MarkDefaultBlues")));
 
-			//Now, patch the function that loads blue cells
-			//from a loaded save state, so we can account for those cells.
+			//And for auto-generated levels.
+			h.Patch(AccessTools.Method(typeof(LevelCompleteScriptLevelGen), "Start"),
+			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "MarkDefaultBlues")));
+
+			//These patches help manage auto-generated levels.
+			h.Patch(AccessTools.Method(typeof(GameManagerScript), "SaveCurrentLevelState"),
+			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "resetHasRun")));
+
+			h.Patch(AccessTools.Method(typeof(GameManagerScript), "DeleteLevelSaveState"),
+			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "resetHasRun")));
+
+			//Patch the functions that mark blue cells.
 			h.Patch(AccessTools.Method(typeof(HexBehaviour), "QuickHighlightClick", new Type[] { typeof(int), typeof(int) }),
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "QuickBlueReact")));
 
-			//Finally, patch the function triggered when blue cells are manually
-			//highlighted by the player, to account for them.
 			h.Patch(AccessTools.Method(typeof(HexBehaviour), "HighlightClick"),
 			new HarmonyMethod(AccessTools.Method(typeof(Hexmod), "BlueReact")));
 		}
 
-		//MarkDefaultBlues() will catch the cells displayed as blue by default.
+		//This function runs before either of the blue cell patched functions,
+		//and sets up the board. Accounts for cells marked blue by default.
 		public static void MarkDefaultBlues()
 		{
-			//MarkDefaultBlues() will always run as soon as a level is loaded (including
-			//restarts). Therefore, we should reset foundArray at the start of it,
-			//and also initialize the cellArray for the level.
+			//Unlike the other two level types, generated levels seem to
+			//run the patched blue functions before MarkDefaultBlues() runs.
+			//To prevent this from happening, we set hasRun to true when
+			//this function is run in an auto-generated level, which is
+			//checked for in the patched blue functions.
+			if (!hasRun && GameObject.Find("UI Parent (Level Gen)") != null)
+				hasRun = true;
+
+			//Reset foundArray, and also initialize the cellArray for the level.
 			foundArray = new bool[34, 34];
 			updateCellArray();
 
@@ -123,9 +140,24 @@ namespace Hexmod
 			}
 		}
 
+		//Reset the "has run" indicator for auto-generated levels when
+		//a level is restarted or exited.
+		public static void resetHasRun()
+		{ hasRun = false; }
+
 		//Account for cells marked as blue upon loading a save state.
 		public static void QuickBlueReact(HexBehaviour __instance)
 		{
+			//For auto-generated levels, ensure MarkDefaultBlues() (which is
+			//an initialization function for the whole puzzle) is run before
+			//running this function. It will find the blue cell this
+			//function would otherwise mark.
+			if (GameObject.Find("UI Parent (Level Gen)") != null)
+			{
+				if (!hasRun)
+					return;
+			}
+
 			//Extract the indices representing the position of the cell on the grid.
 			int a = Mathf.RoundToInt(__instance.gameObject.transform.position.x / 0.88f) + 16;
 			int b = Mathf.RoundToInt(__instance.gameObject.transform.position.y / 0.5f) + 16;

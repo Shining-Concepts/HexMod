@@ -4,7 +4,7 @@
 
 The motivation for making this mod is as follows: the reason I prefer the similar game [Tametsi](https://store.steampowered.com/app/709920/Tametsi/) over the Hexcells games is because Tametsi has some very nice QOL features. Most importantly, when a mine (Hexcells equivalent is blue cells) is discovered, the hints relevant to that mine count down. For example, if you have a line indicating that 3 of the tiles touching that line have a mine, then every time you find a mine in that line, the line's number decrements (and similarly for tile numbers indicating how many of the tile's neighbors are mines). In other words: hints indicate *unfound* mines, rather than the total number of mines.
 
-This is extremely convenient because it cuts down on the tedious and menial mental work of counting how many mines you have left to discover in a region/line. It makes the game faster and more convenient to play without directly increasing the puzzle's difficulty. Hexmod ports this exact feature to the Hexcells trilogy, and it supports all of the trilogy's hints: hints on black tiles, hints on columns, and hints on blue flowers. The mod is also compatible with resuming levels from a save, and levels where some cells are marked blue at the beginning.
+This is extremely convenient because it cuts down on the tedious and menial mental work of counting how many mines you have left to discover in a region/line. It makes the game faster and more convenient to play without directly increasing the puzzle's difficulty. Hexmod ports this exact feature to the Hexcells trilogy, and it supports all of the trilogy's hints: hints on black tiles, hints on columns, and hints on blue flowers. The mod is also compatible with resuming levels from a save, and levels where some cells are marked blue at the beginning. It is also compatible with all 3 types of levels in Hexcells Infinite; base game levels, custom levels and generated levels.
 
 So, when you're playing 6-5 in Hexcells Infinite, don't worry about squinting at the screen to see how many blue cells are undiscovered on that long diagonal line; the line's number now tells you itself!
 
@@ -28,7 +28,7 @@ To delete this mod, simply delete those 2 files from the .zip and the "BepInEx" 
 
 In no particular order, I would like to thank:
 
-* Matthew Brown for making these amazing puzzle games.
+* Matthew Brown for making these amazing puzzle games. (And for making them all use the same codebase, that was VERY helpful when developing!)
 
 * Grip Top Games for making Tametsi which inspired this mod.
 
